@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Research2Build AI 🚀
 
 ### From Research Papers to Tested Machine Learning Experiments
@@ -204,3 +205,6 @@ This project is intended to be released under the MIT License. See the `LICENSE`
 
 
 *Research2Build AI aims to make machine learning research easier to explore, implement, test, and evaluate through a practical AI-assisted engineering workflow.*
+=======
+# research2build-ai
+>>>>>>> ada089bcaff1c034499fbe3f796165c42ef9d538
