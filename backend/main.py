@@ -1,4 +1,6 @@
-
+from fastapi.responses import Response
+import json
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import fitz  # PyMuPDF
@@ -140,3 +142,107 @@ PAPER TEXT:
         "characters_extracted": len(paper_text),
         "analysis": analysis,
     }
+
+class ExperimentStep(BaseModel):
+    title: str
+    description: str
+    source_pages: list[int] = Field(default_factory=list)
+
+
+class ExperimentPlan(BaseModel):
+    research_objective: str
+    proposed_method: str
+    implementation_steps: list[ExperimentStep]
+    dependencies: list[str]
+    evaluation_metrics: list[str]
+    limitations: list[str]
+    assumptions: list[str]
+
+
+class PlanRequest(BaseModel):
+    analysis: str = Field(min_length=100, max_length=30000)
+
+
+@app.post("/api/experiments/plan", response_model=ExperimentPlan)
+def create_experiment_plan(request: PlanRequest):
+    prompt = f"""
+Convert the research analysis below into a practical experiment plan.
+
+Return ONLY a valid JSON object with these fields:
+- research_objective: string
+- proposed_method: string
+- implementation_steps: array of objects with title, description,
+  source_pages (array of integer page numbers)
+- dependencies: array of strings
+- evaluation_metrics: array of strings
+- limitations: array of strings
+- assumptions: array of strings
+
+Rules:
+1. Do not claim any experiment has already run.
+2. Do not invent results or performance measurements.
+3. Separate facts from assumptions.
+4. Prefer small experiments that can run on a typical laptop.
+5. Use page references only when supported by the analysis.
+6. Do not include executable code in this response.
+
+RESEARCH ANALYSIS:
+{request.analysis}
+"""
+
+    try:
+        response = ask_nebius(prompt)
+        raw = response.strip()
+
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1]
+            raw = raw.rsplit("```", 1)[0].strip()
+
+        data = json.loads(raw)
+        return ExperimentPlan.model_validate(data)
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not create a valid experiment plan: {exc}",
+        )
+
+@app.post("/api/experiments/export")
+def export_experiment(request: PlanRequest):
+    try:
+        response_text = ask_nebius(
+            f"""
+Convert this experiment plan into a valid JSON object.
+Preserve all fields and details. Do not invent results.
+Return only JSON.
+
+PLAN:
+{request.analysis}
+"""
+        )
+
+        raw = response_text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1]
+            raw = raw.rsplit("```", 1)[0].strip()
+
+        plan = json.loads(raw)
+
+        from experiment_export import build_experiment_spec
+
+        spec = build_experiment_spec(plan)
+
+        return Response(
+            content=json.dumps(spec, indent=2, ensure_ascii=False),
+            media_type="application/json",
+            headers={
+                "Content-Disposition":
+                    'attachment; filename="experiment-spec.json"'
+            },
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not export experiment specification: {exc}"
+        )
